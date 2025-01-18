@@ -6,7 +6,7 @@ LIB_NAME = liblogging.so
 
 # Compiler and flags
 CC = gcc
-CFLAGS = -I$(INCLUDE_DIR) -Wall -Wno-parentheses -Werror -O3 -std=c23 -shared -fPIC
+CFLAGS = -I$(INCLUDE_DIR) -Wall -Wno-parentheses -Werror -O3 -std=c23 -shared -fPIC -march=native -mtune=native
 
 all: $(wildcard $(SRC_DIR)/*.c) | $(LIB_DIR)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(LIB_DIR)/$(LIB_NAME) $^
