@@ -210,8 +210,8 @@ int lfprintf(FILE *stream, const char *format, ...)
 	char *buf_name = _ ## buf_name + 1;								\
 	buf_name[-1] = buf_name[buf_name ## _size] = GUARD_STACK_VALUE
 #else
-#define ALLOCATE_BUFFER(buf_name, expected_size)
-	char buf_name[min(LINE_BUF_SIZE, (expected_size))];
+#define ALLOCATE_BUFFER(buf_name, expected_size)					\
+	char buf_name[min(LINE_BUF_SIZE, (expected_size))];				\
 	const int buf_name ## _size = sizeof(buf_name)
 #endif
 
