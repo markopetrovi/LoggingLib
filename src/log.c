@@ -18,18 +18,27 @@
 #define OVERFLOW_MSG "[DEBUG]: Log message truncated (overflow)\n"	/* Should have tag */
 #define LINE_BUF_SIZE 2048	/* Don't make too large, it's allocated on stack, possibly a few times. */
 #define DYNAMIC_LINE_SIZE	/* Dynamically determine line size. Slower. LINE_BUF_SIZE then used as a limit to not overflow stack */
+#define GUARD_STACK			/* Allocate two more bytes than LINE_BUF_SIZE specifies... */
+#define GUARD_STACK_VALUE -1
 #define DEFAULT_LOG_LEVEL LOG_INFO
-static const char *log_tags[] = { "", "[ERROR]: ", "[WARNING]: ", "[INFO]: ", "[DEBUG]: ", "[REMOTE]: " };	/* Only content of strings may be changed */
 /* </Configurable_values> */
 
+static const char *log_tags[] = {
+	[LOG_NONE] = "",
+	[LOG_ERROR] = LOG_ERROR_TAG,
+	[LOG_WARNING] = LOG_WARNING_TAG,
+	[LOG_INFO] = LOG_INFO_TAG,
+	[LOG_DEBUG] = LOG_DEBUG_TAG,
+	[LOG_REMOTE] = LOG_REMOTE_TAG
+};
 #define timestamp_size 26	/* Based on definition of asctime. Includes NULL byte */
 static bool redirected_stdio = false; 	/* If it wasn't redirected (yet), bypass log-like formatting */
 static atomic_int _timezone = 0;			/* Offset in hours from UTC */
 static int log_level = DEFAULT_LOG_LEVEL;
 #ifdef WARN_ON_OVERFLOW
-static_assert(LINE_BUF_SIZE >= timestamp_size+MAX(sizeof(log_tags[DEFAULT_LOG_LEVEL]), sizeof(OVERFLOW_MSG))-1, "LINE_BUF_SIZE is below the minimal size required for safe operation (asctime_r, strcat, recursive call on buffer overflow)");
+static_assert(LINE_BUF_SIZE >= timestamp_size+MAX(LOG_TAG_SIZE(DEFAULT_LOG_LEVEL), sizeof(OVERFLOW_MSG))-1, "LINE_BUF_SIZE is below the minimal size required for safe operation (asctime_r, strcat, recursive call on buffer overflow)");
 #else
-static_assert(LINE_BUF_SIZE >= timestamp_size+sizeof(log_tags[DEFAULT_LOG_LEVEL])-1, "LINE_BUF_SIZE is below the minimal size required for safe operation (asctime_r, strcat, recursive call on buffer overflow)");
+static_assert(LINE_BUF_SIZE >= timestamp_size+LOG_TAG_SIZE(DEFAULT_LOG_LEVEL)-1, "LINE_BUF_SIZE is below the minimal size required for safe operation (asctime_r, strcat, recursive call on buffer overflow)");
 #endif
 static_assert(__STDC_VERSION__ > 201710L, "This program requires C23 because of the way variadic arguments are used.");
 
@@ -110,9 +119,10 @@ static int init_line_buffer(char *line_buffer, bool addDefaultTag)
 	/* https://www.gnu.org/software/libc/manual/2.38/html_node/Formatting-Calendar-Time.html */
 	if (unlikely(asctime_r(&local_time, line_buffer)))
 		strcpy(line_buffer, "Thu Jan 01 00:00:00 1970\n");
+	line_buffer[timestamp_size-2] = ' ';	/* Replace \n */
 	if (addDefaultTag) {
 		strcat(line_buffer, log_tags[DEFAULT_LOG_LEVEL]);
-		return timestamp_size + sizeof(log_tags[DEFAULT_LOG_LEVEL]) - 2;
+		return timestamp_size + LOG_TAG_SIZE(DEFAULT_LOG_LEVEL) - 2;
 	}
 	return timestamp_size - 1;
 }
@@ -193,13 +203,44 @@ int lfprintf(FILE *stream, const char *format, ...)
 	return ret;
 }
 
+#ifdef GUARD_STACK
+#define ALLOCATE_BUFFER(buf_name, expected_size)					\
+	char _ ## buf_name[1+min(LINE_BUF_SIZE, (expected_size))+1];	\
+	const int buf_name ## _size = sizeof(_ ## buf_name) - 2;		\
+	char *buf_name = _ ## buf_name + 1;								\
+	buf_name[-1] = buf_name[buf_name ## _size] = GUARD_STACK_VALUE
+#else
+#define ALLOCATE_BUFFER(buf_name, expected_size)
+	char buf_name[min(LINE_BUF_SIZE, (expected_size))];
+	const int buf_name ## _size = sizeof(buf_name)
+#endif
+
+#ifdef GUARD_STACK
+#define ALLOCATE_FIXED_BUFFER(buf_name)										\
+		char _ ## buf_name [1+LINE_BUF_SIZE+1];								\
+		char *buf_name = _ ## buf_name + 1;									\
+		buf_name[-1] = buf_name[LINE_BUF_SIZE] = GUARD_STACK_VALUE;			\
+		const int buf_name ## _size = LINE_BUF_SIZE
+#else
+#define ALLOCATE_FIXED_BUFFER(buf_name)										\
+		char buf_name[LINE_BUF_SIZE];										\
+		const int buf_name ## _size = LINE_BUF_SIZE
+#endif
+
+#ifdef GUARD_STACK
+#define CHECK_STACK(buf_name)																		\
+	if (buf_name[-1] != GUARD_STACK_VALUE || buf_name[buf_name ## _size] != GUARD_STACK_VALUE) {	\
+		*(int*)0x0 = 10;																			\
+		*(int*)-1 = 10;																				\
+	} (void)1
+#else
+#define CHECK_STACK(buf_name)
+#endif
+
 /* stream == NULL for default stream based on tag */
 /* MT-safe locale | AS-safe | AC-safe */
 int lvfprintf(FILE *stream, const char *format, va_list ap)
 {
-	#ifndef DYNAMIC_LINE_SIZE
-		char line_buffer[LINE_BUF_SIZE];
-	#endif
 	int ret, olderrno = errno;
 	Action a = check_lprintf_format(format);
 	
@@ -208,8 +249,10 @@ int lvfprintf(FILE *stream, const char *format, va_list ap)
 	#ifdef DYNAMIC_LINE_SIZE
 		va_list ptr;
 		va_copy(ptr, ap);
-		char line_buffer[min(LINE_BUF_SIZE, npf_vsnprintf(NULL, 0, format, ptr)+timestamp_size+sizeof(log_tags[DEFAULT_LOG_LEVEL])-1)];
+		ALLOCATE_BUFFER(line_buffer, npf_vsnprintf(NULL, 0, format, ptr)+timestamp_size+LOG_TAG_SIZE(DEFAULT_LOG_LEVEL)-1);
 		va_end(ptr);
+	#else
+		ALLOCATE_FIXED_BUFFER(line_buffer);
 	#endif
 	if (a == FALLBACK) {
 		if (log_level < DEFAULT_LOG_LEVEL)
@@ -220,15 +263,15 @@ int lvfprintf(FILE *stream, const char *format, va_list ap)
 		ret = init_line_buffer(line_buffer, false);
 	}
 
-	ret = npf_vsnprintf(line_buffer+ret, sizeof(line_buffer)-ret, format, ap);
+	ret = npf_vsnprintf(line_buffer+ret, line_buffer_size-ret, format, ap);
 	#ifdef WARN_ON_OVERFLOW
-		if (ret > sizeof(line_buffer)-ret-1)
+		if (ret > line_buffer_size-ret-1)
 			lprintf(OVERFLOW_MSG);
 	#endif
 
 	if (stream) {
 		#ifdef DYNAMIC_LINE_SIZE
-			ret = write(fileno(stream), line_buffer, sizeof(line_buffer));
+			ret = write(fileno(stream), line_buffer, line_buffer_size);
 		#else
 			ret = simple_write(fileno(stream), line_buffer)
 		#endif
@@ -236,9 +279,9 @@ int lvfprintf(FILE *stream, const char *format, va_list ap)
 	else {
 		#ifdef DYNAMIC_LINE_SIZE
 			if (a == SPECIAL)
-				ret = write(STDERR_FILENO, line_buffer, sizeof(line_buffer));
+				ret = write(STDERR_FILENO, line_buffer, line_buffer_size);
 			else
-				ret = write(STDOUT_FILENO, line_buffer, sizeof(line_buffer));
+				ret = write(STDOUT_FILENO, line_buffer, line_buffer_size);
 		#else
 			if (a == SPECIAL)
 				ret = simple_write(STDERR_FILENO, line_buffer);
@@ -247,6 +290,7 @@ int lvfprintf(FILE *stream, const char *format, va_list ap)
 		#endif
 	}
 
+	CHECK_STACK(line_buffer);
 	errno = olderrno;
 	return ret;
 }
@@ -262,21 +306,22 @@ void lperrorf(const char *format, ...)
 
 	#ifdef DYNAMIC_LINE_SIZE
 		va_start(ptr);
-		char error_message[min(LINE_BUF_SIZE, npf_vsnprintf(NULL, 0, format, ptr))];
+		ALLOCATE_BUFFER(error_message, npf_vsnprintf(NULL, 0, format, ptr));
 		va_end(ptr);
 	#else
-		char error_message[LINE_BUF_SIZE];
+		ALLOCATE_FIXED_BUFFER(error_message);
 	#endif
 
 	va_start(ptr);
-	ret = npf_vsnprintf(error_message, sizeof(error_message), format, ptr);
+	ret = npf_vsnprintf(error_message, error_message_size, format, ptr);
 	va_end(ptr);
 	#ifdef WARN_ON_OVERFLOW
-		if (ret > sizeof(error_message)-1)
+		if (ret > error_message_size-1)
 			lprintf(OVERFLOW_MSG);
 	#endif
 	lprintf("[ERROR]: %s: %s\n", error_message, strerrordesc_np(olderrno));
 
+	CHECK_STACK(error_message);
 	errno = olderrno;
 }
 

@@ -9,7 +9,7 @@ CC = gcc
 CFLAGS = -I$(INCLUDE_DIR) -Wall -Wno-parentheses -Werror -O3 -std=c23 -shared -fPIC -march=native -mtune=native
 
 all: $(wildcard $(SRC_DIR)/*.c) | $(LIB_DIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(LIB_DIR)/$(LIB_NAME) $^
+	$(CC) $(CFLAGS) -o $(LIB_DIR)/$(LIB_NAME) $^
 
 # Create binary directory if it doesn't exist
 $(LIB_DIR):

@@ -10,7 +10,19 @@
 #define LOG_INFO	3
 #define LOG_DEBUG	4
 #define LOG_REMOTE	5	/* Always print these messages; they're explicitly requested by the user */
-/* Possible tags: [REMOTE], [INFO], [WARNING], [DEBUG], [ERROR] */
+
+#define LOG_ERROR_TAG   "[ERROR]: "
+#define LOG_WARNING_TAG "[WARNING]: "
+#define LOG_INFO_TAG    "[INFO]: "
+#define LOG_DEBUG_TAG   "[DEBUG]: "
+#define LOG_REMOTE_TAG  "[REMOTE]: "
+
+#define LOG_TAG_SIZE(level)								\
+    ((level) == LOG_ERROR ? sizeof(LOG_ERROR_TAG) :		\
+    (level) == LOG_WARNING ? sizeof(LOG_WARNING_TAG) :	\
+    (level) == LOG_INFO ? sizeof(LOG_INFO_TAG) :		\
+    (level) == LOG_DEBUG ? sizeof(LOG_DEBUG_TAG) :		\
+    (level) == LOG_REMOTE ? sizeof(LOG_REMOTE_TAG) : 0)
 
 void redirect_stdio(char *log_path);
 
