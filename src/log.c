@@ -64,7 +64,10 @@ static void localtime_safe(time_t time, struct tm *tm_time)
 	uint32_t n32_Pass4year;
 	uint32_t n32_hpery;
 
-	time = time + atomic_load_explicit(&_timezone, memory_order_relaxed);
+	tm_time->tm_gmtoff = atomic_load_explicit(&_timezone, memory_order_relaxed);
+	tm_time->tm_zone = "";
+	tm_time->tm_isdst = -1;
+	time = time + tm_time->tm_gmtoff;
 
 	if (time < 0)
 		time = 0;
