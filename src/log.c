@@ -137,7 +137,7 @@ static int init_line_buffer(char *line_buffer, bool addDefaultTag)
 		return 0;
 	localtime_safe(rawtime, &local_time);
 	/* https://www.gnu.org/software/libc/manual/2.38/html_node/Formatting-Calendar-Time.html */
-	if (unlikely(asctime_r(&local_time, line_buffer)))
+	if (unlikely(!asctime_r(&local_time, line_buffer)))
 		strcpy(line_buffer, "Thu Jan 01 00:00:00 1970\n");
 	line_buffer[timestamp_size-2] = ' ';	/* Replace \n */
 	if (addDefaultTag) {
