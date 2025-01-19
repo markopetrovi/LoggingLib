@@ -266,10 +266,16 @@ int lvfprintf(FILE *stream, const char *format, va_list ap)
 	
 	if (a == ABORT)
 		return 0;
+	if (a == FALLBACK && log_level < DEFAULT_LOG_LEVEL)
+		return 0;
 	#ifdef DYNAMIC_LINE_SIZE
 		va_list ptr;
 		va_copy(ptr, ap);
-		ALLOCATE_BUFFER(line_buffer, npf_vsnprintf(NULL, 0, format, ptr)+timestamp_size+LOG_TAG_SIZE(DEFAULT_LOG_LEVEL)-1);
+		if (a == FALLBACK)
+			ret = npf_vsnprintf(NULL, 0, format, ptr)+timestamp_size+LOG_TAG_SIZE(DEFAULT_LOG_LEVEL)-1;
+		else
+			ret = npf_vsnprintf(NULL, 0, format, ptr)+timestamp_size-1;
+		ALLOCATE_BUFFER(line_buffer, ret);
 		va_end(ptr);
 	#else
 		ALLOCATE_FIXED_BUFFER(line_buffer);
