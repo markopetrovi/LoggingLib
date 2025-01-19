@@ -40,4 +40,4 @@ void lperrorf(const char *format, ...);
 #define lperror(message)	lprintf("[ERROR]: %s: %s\n", message, strerrordesc_np(errno))
 #define dlperror(message)	lprintf("[ERROR]: %s:"TOSTRING(__LINE__)": %s: %s\n", basename(__FILE__), message, strerrordesc_np(errno))
 
-#endif _LOG_H
+#endif /* _LOG_H */
