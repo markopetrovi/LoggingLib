@@ -40,7 +40,6 @@ static_assert(LINE_BUF_SIZE >= timestamp_size+MAX(LOG_TAG_SIZE(DEFAULT_LOG_LEVEL
 #else
 static_assert(LINE_BUF_SIZE >= timestamp_size+LOG_TAG_SIZE(DEFAULT_LOG_LEVEL)-1, "LINE_BUF_SIZE is below the minimal size required for safe operation (asctime_r, strcat, recursive call on buffer overflow)");
 #endif
-static_assert(__STDC_VERSION__ > 201710L, "This program requires C23 because of the way variadic arguments are used.");
 
 #define check(...)								\
 	while (unlikely((__VA_ARGS__) < 0)) {		\
@@ -203,7 +202,7 @@ int lprintf(const char *format, ...)
 	va_list ptr;
 	int ret;
 
-	va_start(ptr);
+	va_start(ptr, format);
 	ret = lvfprintf(NULL, format, ptr);
 	va_end(ptr);
 
@@ -216,7 +215,7 @@ int lfprintf(FILE *stream, const char *format, ...)
 	va_list ptr;
 	int ret;
 
-	va_start(ptr);
+	va_start(ptr, format);
 	ret = lvfprintf(stream, format, ptr);
 	va_end(ptr);
 
@@ -331,14 +330,14 @@ void lperrorf(const char *format, ...)
 		return;
 
 	#ifdef DYNAMIC_LINE_SIZE
-		va_start(ptr);
+		va_start(ptr, format);
 		ALLOCATE_BUFFER(error_message, npf_vsnprintf(NULL, 0, format, ptr));
 		va_end(ptr);
 	#else
 		ALLOCATE_FIXED_BUFFER(error_message);
 	#endif
 
-	va_start(ptr);
+	va_start(ptr, format);
 	ret = npf_vsnprintf(error_message, error_message_size, format, ptr);
 	va_end(ptr);
 	#ifdef WARN_ON_OVERFLOW
