@@ -55,21 +55,6 @@ typedef enum {
 	SPECIAL
 } Action;
 
-/* Find the number of days since Sunday */
-/* MT-safe AS-safe AC-safe */
-static void zeller_congruence(struct tm *tm_time)
-{
-	int mon = (tm_time->tm_mon + 10) % 12 + 3;
-	int year = 1900 + tm_time->tm_year - (mon == 13 || mon == 14);
-	int J = year / 100;
-	int K = year % 100;
-	tm_time->tm_wday = (tm_time->tm_mday + (13*(mon+1)/5) + K + (K/4) + (J/4) - (2*J)) % 7;
-	if (!tm_time->tm_wday)
-		tm_time->tm_wday = 6;
-	else
-		tm_time->tm_wday--;
-}
-
 /* Simple localtime implementation without locks, taken from https://sourceware.org/bugzilla/show_bug.cgi?id=16145 and slightly adapted */
 /* MT-safe AS-safe AC-safe */
 static void localtime_safe(time_t time, struct tm *tm_time)
@@ -81,10 +66,11 @@ static void localtime_safe(time_t time, struct tm *tm_time)
 	tm_time->tm_gmtoff = atomic_load_explicit(&_timezone, memory_order_relaxed);
 	tm_time->tm_zone = "";
 	tm_time->tm_isdst = -1;
-	time = time + tm_time->tm_gmtoff;
-
 	if (time < 0)
 		time = 0;
+	time = time + tm_time->tm_gmtoff;
+	tm_time->tm_wday = ((time / 86400) + 4) % 7;
+
 	tm_time->tm_sec = (int)(time % 60);
 	time /= 60;
 	tm_time->tm_min = (int)(time % 60);
@@ -122,7 +108,6 @@ static void localtime_safe(time_t time, struct tm *tm_time)
 	}
 
 	tm_time->tm_mday = (int)(time);
-	zeller_congruence(tm_time);
 	return;
 }
 
