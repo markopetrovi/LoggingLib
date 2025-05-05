@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <stdarg.h>
 
 #define LOG_NONE	0
 #define LOG_ERROR	1
